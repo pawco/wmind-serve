@@ -1,0 +1,57 @@
+{
+  "name": "wmind-serve",
+  "version": "0.0.1",
+  "description": "Fast local LLM inference server for Working Mind — one command to start",
+  "type": "module",
+  "bin": {
+    "wmind-serve": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src/",
+    "bench": "tsx src/bench.ts"
+  },
+  "keywords": [
+    "llm",
+    "inference",
+    "mlx",
+    "apple-silicon",
+    "local-ai",
+    "wmind"
+  ],
+  "license": "MIT",
+  "author": "pawco",
+  "homepage": "https://github.com/pawco/wmind-serve#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pawco/wmind-serve.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pawco/wmind-serve/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "picocolors": "^1.0.0",
+    "systeminformation": "^5.25.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
