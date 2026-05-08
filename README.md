@@ -2,7 +2,7 @@
 
 Fast local LLM inference server for Apple Silicon. One command to start.
 
-Uses [vLLM-MLX](https://github.com/vllm-project/vllm-mlx) under the hood for faster inference than Ollama on Apple Silicon, with an OpenAI-compatible API.
+Uses [vLLM-MLX](https://github.com/waybarrios/vllm-mlx) under the hood for faster inference than Ollama on Apple Silicon, with an OpenAI-compatible API.
 
 Companion to [Working Mind](https://github.com/pawco/working-mind) — a secure, private, research-grade AI companion with a persistent knowledge graph.
 
