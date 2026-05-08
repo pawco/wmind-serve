@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { detectHardware, formatChipName, modelFitsHardware, modelTightFit, getAvailableRamGB } from './hardware.js';
-import { getCatalog, getDefaultModel, findCatalogModel, filterCatalogByRam } from './catalog.js';
+import { getCatalog, getDefaultModel, findCatalogModel, findCatalogModelByHfId, findCatalogModelByFamily, filterCatalogByRam } from './catalog.js';
 import { scanAllCaches, scanHfCache, isModelDownloaded, getModelSnapshotPath } from './scanner.js';
 import { loadIndex, saveIndex, addCatalogModelToIndex, addScannedModelToIndex, removeModelFromIndex, getTotalDiskUsage, formatBytes } from './index-manager.js';
 import { downloadModel, deleteModelFromCache } from './downloader.js';
@@ -39,9 +39,55 @@ program
 
 		if (!catalogModel) {
 			if (modelName) {
-				console.error(pc.red(`  Unknown model: ${modelName}`));
-				console.log(pc.dim('  Run: wmind-serve models available'));
-				process.exit(1);
+				// Fallback: try HuggingFace ID (org/model) or index lookup
+				const index = loadIndex();
+
+				// Check index for a previously scanned model (handles ollama/ prefix)
+				if (index.models[modelName]) {
+					const indexed = index.models[modelName];
+					if (indexed.source === 'ollama') {
+						// Try to find MLX equivalent by family
+						const mlxMatch = findCatalogModelByFamily(indexed.family, indexed.params);
+						if (mlxMatch) {
+							catalogModel = mlxMatch;
+							modelName = mlxMatch.name;
+							console.log(pc.dim(`  Mapped ${indexed.name} -> ${mlxMatch.displayName} (MLX)`));
+						}
+					}
+				}
+
+				// Try as HuggingFace model ID (org/model-name)
+				if (!catalogModel && modelName.includes('/')) {
+					catalogModel = findCatalogModelByHfId(modelName);
+					if (catalogModel) {
+						modelName = catalogModel.name;
+						console.log(pc.dim(`  Resolved ${opts.model} -> ${catalogModel.displayName}`));
+					}
+				}
+
+				// Try scanning for it on disk
+				if (!catalogModel) {
+					const snapshotPath = getModelSnapshotPath(modelName);
+					if (snapshotPath) {
+						console.log(pc.dim(`  Found model at ${snapshotPath}`));
+						const result = await startServer(snapshotPath, modelName, parseInt(opts.port, 10));
+						if (!result.success) {
+							console.error(pc.red(`  ${result.error}`));
+							process.exit(1);
+						}
+						configureWmind(`http://127.0.0.1:${parseInt(opts.port, 10)}/v1`, modelName);
+						console.log('');
+						console.log(pc.green(`  Ready: http://127.0.0.1:${parseInt(opts.port, 10)}/v1`));
+						console.log(pc.dim(`  wmind will use local-fast by default.`));
+						return;
+					}
+				}
+
+				if (!catalogModel) {
+					console.error(pc.red(`  Unknown model: ${modelName}`));
+					console.log(pc.dim('  Run: wmind-serve models available'));
+					process.exit(1);
+				}
 			}
 
 			catalogModel = getDefaultModel();
@@ -185,10 +231,22 @@ modelsCmd
 		}
 
 		if (ollamaModels.length > 0) {
-			console.log(pc.bold('\n  Ollama Models:\n'));
+			console.log(pc.bold('\n  Ollama Models (GGUF -- use with ollama, not wmind-serve):\n'));
 			for (const m of ollamaModels) {
 				const src = pc.dim(`[${m.source}]`);
-				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${src}`);
+				const ollamaShort = m.name.replace('ollama/', '');
+				const catalogMatch = findCatalogModel(ollamaShort);
+				const mlxLabel = catalogMatch
+					? pc.green(` -> wmind-serve: ${catalogMatch.name}`)
+					: m.family
+						? (() => {
+								const byFamily = findCatalogModelByFamily(m.family, m.params);
+								return byFamily
+									? pc.green(` -> wmind-serve: ${byFamily.name}`)
+									: pc.yellow(' (no MLX equivalent)');
+							})()
+						: pc.yellow(' (no MLX equivalent)');
+				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${src}${mlxLabel}`);
 			}
 		}
 
@@ -219,7 +277,8 @@ modelsCmd
 			console.log(pc.bold(`\n  Recommended for ${formatChipName(hw.chip)} (${hw.unifiedMemoryGB} GB):\n`));
 			for (const m of recommended) {
 				const dl = index.models[m.name]?.downloadedAt ? pc.green('downloaded') : pc.dim('not downloaded');
-				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${dl}`);
+				const aliasStr = m.aliases.length > 0 ? pc.dim(` (also: ${m.aliases.join(', ')})`) : '';
+				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${dl}${aliasStr}`);
 			}
 		}
 
@@ -227,14 +286,16 @@ modelsCmd
 			console.log(pc.bold(`\n  Fits but may be slow on ${formatChipName(hw.chip)}:\n`));
 			for (const m of tightFits) {
 				const dl = index.models[m.name]?.downloadedAt ? pc.green('downloaded') : pc.dim('not downloaded');
-				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${dl}`);
+				const aliasStr = m.aliases.length > 0 ? pc.dim(` (also: ${m.aliases.join(', ')})`) : '';
+				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${dl}${aliasStr}`);
 			}
 		}
 
 		if (tooLarge.length > 0) {
 			console.log(pc.bold('\n  Too large for current hardware:\n'));
 			for (const m of tooLarge) {
-				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${pc.red(`needs ${m.minRamGB} GB`)}`);
+				const aliasStr = m.aliases.length > 0 ? pc.dim(` (also: ${m.aliases.join(', ')})`) : '';
+				console.log(`  ${pc.bold(m.name.padEnd(35))} ${m.sizeHuman.padEnd(10)} ${m.params.padEnd(5)} ${m.quant.padEnd(6)} ${pc.red(`needs ${m.minRamGB} GB`)}${aliasStr}`);
 			}
 		}
 
@@ -245,7 +306,10 @@ program
 	.command('pull <name>')
 	.description('Download a model from catalog')
 	.action(async (name) => {
-		const catalogModel = findCatalogModel(name);
+		let catalogModel = findCatalogModel(name);
+		if (!catalogModel && name.includes('/')) {
+			catalogModel = findCatalogModelByHfId(name);
+		}
 		if (!catalogModel) {
 			console.error(pc.red(`  Unknown model: ${name}`));
 			console.log(pc.dim('  Run: wmind-serve models available'));

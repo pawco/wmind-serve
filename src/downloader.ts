@@ -12,11 +12,14 @@ export interface DownloadResult {
 
 export function getHfCliPath(): string {
   const venv = join(homedir(), '.venv', 'vllm-mlx');
-  const venvBin = join(venv, 'bin', 'huggingface-cli');
+  const hfBin = join(venv, 'bin', 'hf');
 
-  if (existsSync(venvBin)) return venvBin;
+  if (existsSync(hfBin)) return hfBin;
 
-  return 'huggingface-cli';
+  const legacyBin = join(venv, 'bin', 'huggingface-cli');
+  if (existsSync(legacyBin)) return legacyBin;
+
+  return 'hf';
 }
 
 export function downloadModel(
@@ -25,7 +28,8 @@ export function downloadModel(
 ): Promise<DownloadResult> {
   return new Promise((resolve) => {
     const cli = getHfCliPath();
-    const args = ['download', hfId];
+    const isHf = cli.endsWith('/hf') || cli === 'hf';
+    const args = isHf ? ['download', hfId] : ['download', hfId];
 
     onProgress?.(`Downloading ${pc.cyan(hfId)}...`);
 
@@ -72,7 +76,8 @@ export function downloadModel(
 export function deleteModelFromCache(hfId: string): Promise<boolean> {
   return new Promise((resolve) => {
     const cli = getHfCliPath();
-    const args = ['delete-cache', hfId, '--yes'];
+    const isHf = cli.endsWith('/hf') || cli === 'hf';
+    const args = isHf ? ['cache', 'delete', hfId, '--yes'] : ['delete-cache', hfId, '--yes'];
 
     const child = execFile(cli, args, {
       timeout: 60_000,

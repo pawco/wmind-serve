@@ -2,7 +2,7 @@ import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { CatalogModel } from './catalog.js';
-import { findCatalogModelByHfId } from './catalog.js';
+import { findCatalogModelByHfId, findCatalogModelByAlias } from './catalog.js';
 
 export interface ScannedModel {
   id: string;
@@ -103,6 +103,7 @@ export function scanOllamaCache(): ScannedModel[] {
       }
 
       const id = `ollama/${ollamaName}`;
+      const catalogModel = findCatalogModelByAlias(ollamaName);
 
       models.push({
         id,
@@ -110,6 +111,7 @@ export function scanOllamaCache(): ScannedModel[] {
         ollamaName,
         localPath: manifestPath,
         sizeBytes,
+        catalogModel,
       });
     }
   }
